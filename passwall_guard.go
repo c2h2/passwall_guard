@@ -214,14 +214,27 @@ func switchIfNoExternal() bool {
 }
 
 // Get the current node.
-func getCurrentNode() string {
+func getCurrentNodeName() string {
 	cmd := "uci get passwall.@global[0].tcp_node"
 	currNode := runOpenWrtCmd(cmd)
 	currNode = strings.TrimSpace(currNode)
-	fmt.Println(currNode)
-	cmd = "uci show passwall." + currNode
-	return runOpenWrtCmd(cmd)
+	content := runOpenWrtCmd("uci show passwall")
+	remarks := map[string]string{}
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		elems := strings.Split(line, "=")
+		if len(elems) > 1 && strings.HasSuffix(elems[0], ".remarks") {
+			key := strings.Split(elems[0], ".")[1]
+			remarks[key] = elems[1]
+		}
+	}
+	if remarks[currNode] != "" {
+		return remarks[currNode]
+	}else{
+		return ""
+	}
 }
+
 // GetDefaultGateway reads the /proc/net/route file to find the default gateway.
 func getDefaultGateway() (string, error) {
 	file, err := os.Open("/proc/net/route")
@@ -311,6 +324,7 @@ func printIPs(){
 	fmt.Println("My IPv6 =", ipv6)
 }
 
+
 func main() {
 	var progUptime time.Duration
 	var progStartTime time.Time = time.Now()
@@ -334,7 +348,10 @@ func main() {
 
 	for {
 		//loop and do work
+		currentNode := getCurrentNodeName()
+		fmt.Printf("%s, openWRT=%s, node=%s\n", time.Now().Format("2006-01-02 15:04:05"), openwrtIP	, currentNode)
 		if switchIfNoExternal() {
+
 			progUptime = time.Since(progStartTime)
 			fmt.Printf("%s, Passwall_guard is up and running for %s\n", time.Now().Format("2006-01-02 15:04:05"), progUptime)
 			fmt.Printf("%s, Current node is working, sleep %d seconds\n", time.Now().Format("2006-01-02 15:04:05"), int(Config["sleepRecheckSeconds"].(float64)))
