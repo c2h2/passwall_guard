@@ -83,7 +83,7 @@ func getMSTimes(url string, times int) [2]float64 {
 		}
 		fmt.Printf("%s%s, Checking the target site: %s, ping: %dms\033[0m\n", color, time.Now().Format("2006-01-02 15:04:05"), url, int(ms))
 		mss = append(mss, ms)
-		if ms < 1000 && i>1 {
+		if ms < 1000 && i>=1 {
 			for j := 0; j < times - i; j++{
 				mss = append(mss, ms)
 			}
