@@ -22,19 +22,16 @@ var getNewSubCmd = "lua /usr/share/passwall/subscribe.lua start"
 var nodes []string
 
 
-func myExternalIPv4() string {
-	// Create a custom HTTP client with a User-Agent header
+func getExternalIP(serverAddress string) string {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://4.photonicat.com/ip.php", nil) // Use the IPv4-specific endpoint
+	req, err := http.NewRequest("GET", serverAddress, nil) 
 	if err != nil {
 		fmt.Println("Failed to create request:", err)
 		return ""
 	}
 
-	// Set the User-Agent header to simulate a curl request
-	req.Header.Set("User-Agent", "curl/7.68.0") // Use a typical curl user agent string
+	req.Header.Set("User-Agent", "passwall_guard/1.0.0") 
 
-	// Send the request
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Failed to send request:", err)
@@ -42,46 +39,22 @@ func myExternalIPv4() string {
 	}
 	defer resp.Body.Close()
 
-	// Read the response body
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Failed to read response body:", err)
 		return ""
 	}
 
-	// Return the external IPv4 address as a string
 	return string(body)
 }
 
+
+func myExternalIPv4() string {
+	return getExternalIP("https://4.photonicat.com/ip.php")
+}
+
 func myExternalIPv6() string {
-	// Create a custom HTTP client with a User-Agent header
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://6.photonicat.com/ip.php", nil) // Use the IPv4-specific endpoint
-	if err != nil {
-		fmt.Println("Failed to create request:", err)
-		return ""
-	}
-
-	// Set the User-Agent header to simulate a curl request
-	req.Header.Set("User-Agent", "curl/7.68.0") // Use a typical curl user agent string
-
-	// Send the request
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Failed to send request:", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Failed to read response body:", err)
-		return ""
-	}
-
-	// Return the external IPv4 address as a string
-	return string(body)
+	return getExternalIP("https://6.photonicat.com/ip.php")
 }
 
 // Get the ping time for a URL.
@@ -98,10 +71,25 @@ func getMS(url string) float64 {
 // Get minimum and maximum ping times over multiple requests.
 func getMSTimes(url string, times int) [2]float64 {
 	var mss []float64
+	var color string
 	for i := 0; i < times; i++ {
-		mss = append(mss, getMS(url))
+		ms := getMS(url)
+		if ms > 2000 {
+			color = "\033[31m"
+		}else if ms > 800{
+			color = "\033[33m"
+		}else if ms <= 800{
+			color = "\033[32m"
+		}
+		fmt.Printf("%s%s, Checking the target site: %s, ping: %dms\033[0m\n", color, time.Now().Format("2006-01-02 15:04:05"), url, int(ms))
+		mss = append(mss, ms)
+		if ms < 1000 && i>1 {
+			for j := 0; j < times - i; j++{
+				mss = append(mss, ms)
+			}
+			return [2]float64{min(mss), max(mss)}
+		}
 		time.Sleep(time.Duration(int(Config["retryIntervalMS"].(float64))) * time.Millisecond)
-		fmt.Printf("%s, site: %s, ping: %dms\n", time.Now().Format("2006-01-02 15:04:05"), url, int(mss[len(mss)-1]))
 	}
 	return [2]float64{min(mss), max(mss)}
 }
@@ -302,7 +290,33 @@ func max(nums []float64) float64 {
 	return m
 }
 
+func printIPs(){
+	ipv4Chan := make(chan string)
+	ipv6Chan := make(chan string)
+
+	// Launch goroutine to fetch IPv4.
+	go func() {
+		ipv4Chan <- myExternalIPv4()
+	}()
+
+	// Launch goroutine to fetch IPv6.
+	go func() {
+		ipv6Chan <- myExternalIPv6()
+	}()
+
+	// Wait for both results.
+	ipv4 := <-ipv4Chan
+	ipv6 := <-ipv6Chan
+	fmt.Println("My IPv4 =", ipv4)
+	fmt.Println("My IPv6 =", ipv6)
+}
+
 func main() {
+	var progUptime time.Duration
+	var progStartTime time.Time = time.Now()
+
+	go printIPs()
+
 	readConfig()
 	openwrtIP = Config["openwrtIP"].(string)
 	if openwrtIP == "" {
@@ -314,19 +328,18 @@ func main() {
 			fmt.Println("Trying with default gateway OpenWRT IP =", openwrtIP)
 		}
 	}
-
+	fmt.Println("OpenWRT IP =", openwrtIP, "Available nodes are...")
 	allNodes := getOpenWrtNodeList()
 	fmt.Println("Total available node candidates: ",len(allNodes))
-	fmt.Println(allNodes)
 
 	for {
-		ipv4 := myExternalIPv4()
-		fmt.Println("My IPv4 =", ipv4)
-		fmt.Println(getCurrentNode())
+		//loop and do work
 		if switchIfNoExternal() {
-			fmt.Println(getCurrentNode())
-			fmt.Println("Current node is working")
-			time.Sleep(360 * time.Second)
+			progUptime = time.Since(progStartTime)
+			fmt.Printf("%s, Passwall_guard is up and running for %s\n", time.Now().Format("2006-01-02 15:04:05"), progUptime)
+			fmt.Printf("%s, Current node is working, sleep %d seconds\n", time.Now().Format("2006-01-02 15:04:05"), int(Config["sleepRecheckSeconds"].(float64)))
+			time.Sleep(time.Duration(int(Config["sleepRecheckSeconds"].(float64))) * time.Second)
+			printIPs()
 		} else {
 			fmt.Println("Changed to a new node, retrying...")
 		}

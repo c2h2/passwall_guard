@@ -6,5 +6,6 @@
     "preferredNodeKeywords": ["vless", "cali"],
     "dislikedNodeKeywords": ["nothing", "dontlike"],
     "checkSite": "https://www.google.com",
-    "checkSiteTimeoutMS": 1500
+    "checkSiteTimeoutMS": 1500,
+    "sleepRecheckSeconds": 120
 }
